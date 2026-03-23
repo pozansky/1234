@@ -1,5 +1,4 @@
 # Core Streamlit
-streamlit==1.44.1
 
 # OpenAI & LangChain
 openai==1.70.0
