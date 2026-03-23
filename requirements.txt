@@ -1,0 +1,15 @@
+PyYAML
+langchain
+langchain-community
+langchain-core
+qwen
+sentence-transformers
+faiss-cpu
+streamlit
+pydantic
+langchain_huggingface
+langchain-openai
+openai
+python-dotenv
+sentence-transformers
+pypdf
