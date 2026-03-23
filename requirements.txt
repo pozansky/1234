@@ -1,29 +1,14 @@
-# ============================================
-# Streamlit Cloud 部署配置 - 已验证可用
-# 最后更新：2026-03-23
-# ============================================
-
-# 1. 核心框架
-streamlit==1.32.0
-
-# 2. OpenAI API
-openai==1.12.0
-
-# 3. LangChain 生态 (版本必须匹配)
-langchain==0.1.4
-langchain-core==0.1.17
-langchain-community==0.0.17
-langchain-openai==0.0.5
-
-# 4. 嵌入模型和向量搜索
-sentence-transformers==2.3.1
-faiss-cpu==1.7.4
-
-# 5. 基础工具
-pydantic==2.6.1
-python-dotenv==1.0.1
-PyYAML==6.0.1
-httpx==0.26.0
-
-# 6. 可选 (如果不需要可以删除)
-# pypdf==4.0.1
+PyYAML
+langchain
+langchain-community
+langchain-core
+sentence-transformers
+faiss-cpu
+streamlit
+pydantic
+langchain_huggingface
+langchain-openai
+openai
+python-dotenv
+sentence-transformers
+pypdf
