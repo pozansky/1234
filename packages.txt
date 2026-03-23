@@ -1,4 +1,0 @@
-# System packages for sentence-transformers and numpy
-# Streamlit Cloud 会自动安装这些系统依赖
-libopenblas-dev
-gfortran
