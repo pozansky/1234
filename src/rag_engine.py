@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import json
 import math
@@ -120,7 +120,18 @@ class ComplianceRAGEngine:
                 pass
 
         # 固定使用你提供的 DashScope key，保证与语音转写一致
-        os.environ["DASHSCOPE_API_KEY"] = "sk-eb015732b43844a7980f0daf9eba556d"
+        # 优先从 Streamlit Secrets 获取，其次从环境变量获取
+        try:
+            import streamlit as st
+            if st.secrets and "api_keys" in st.secrets and "dashscope" in st.secrets["api_keys"]:
+                dashscope_key = st.secrets["api_keys"]["dashscope"]
+            else:
+                dashscope_key = os.getenv("DASHSCOPE_API_KEY", "sk-eb015732b43844a7980f0daf9eba556d")
+        except Exception:
+            # 非 Streamlit 环境或 Secrets 未配置时使用默认值
+            dashscope_key = os.getenv("DASHSCOPE_API_KEY", "sk-eb015732b43844a7980f0daf9eba556d")
+        
+        os.environ["DASHSCOPE_API_KEY"] = dashscope_key
 
         self._http_client = httpx.Client(event_hooks={"response": [_dashscope_response_hook]})
 
