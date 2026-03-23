@@ -1,0 +1,6 @@
+# System packages required for Streamlit Cloud
+# 这些是系统级依赖，pip 无法安装
+
+libopenblas-dev
+gfortran
+libhdf5-dev
