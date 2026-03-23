@@ -1,0 +1,25 @@
+# 最小化依赖配置 - 用于测试 Streamlit Cloud 部署
+# 如果主 requirements.txt 失败，使用这个版本
+
+streamlit
+pydantic
+python-dotenv
+httpx
+
+# LangChain
+langchain
+langchain-community
+langchain-core
+langchain_huggingface
+langchain-openai
+
+# OpenAI API
+openai
+
+# Embeddings
+sentence-transformers
+faiss-cpu
+
+# 可选：如果不需要可以注释掉
+# PyYAML
+# pypdf

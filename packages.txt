@@ -1,6 +1,4 @@
-# System packages required for Streamlit Cloud
-# 这些是系统级依赖，pip 无法安装
-
+# System packages for sentence-transformers and numpy
+# Streamlit Cloud 会自动安装这些系统依赖
 libopenblas-dev
 gfortran
-libhdf5-dev
