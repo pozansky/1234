@@ -120,18 +120,7 @@ class ComplianceRAGEngine:
                 pass
 
         # 固定使用你提供的 DashScope key，保证与语音转写一致
-        # 优先从 Streamlit Secrets 获取，其次从环境变量获取
-        try:
-            import streamlit as st
-            if st.secrets and "api_keys" in st.secrets and "dashscope" in st.secrets["api_keys"]:
-                dashscope_key = st.secrets["api_keys"]["dashscope"]
-            else:
-                dashscope_key = os.getenv("DASHSCOPE_API_KEY", "sk-eb015732b43844a7980f0daf9eba556d")
-        except Exception:
-            # 非 Streamlit 环境或 Secrets 未配置时使用默认值
-            dashscope_key = os.getenv("DASHSCOPE_API_KEY", "sk-eb015732b43844a7980f0daf9eba556d")
-        
-        os.environ["DASHSCOPE_API_KEY"] = dashscope_key
+        os.environ["DASHSCOPE_API_KEY"] = "sk-eb015732b43844a7980f0daf9eba556d"
 
         self._http_client = httpx.Client(event_hooks={"response": [_dashscope_response_hook]})
 
@@ -654,12 +643,22 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
             "服务续费", "服务售卖", "服务跟进", "优惠套餐", "办理续费", "办理缴费",
             "先交定金", "定金", "尾款", "补尾款", "信用卡", "整理账户", "先申请下来"]
 
+    def _get_e13_trade_flow_exemption_keywords(self) -> List[str]:
+        return [
+            "引用/回复消息", "这是一条引用/回复消息", "回复消息", "引用消息",
+            "设置股价", "自动卖出", "设置后不怎么管它", "设置后不怎么管",
+            "到了那个价位直接就卖出了", "到了那个价位直接就卖出", "到达点位就会自动卖出",
+            "到达点位自动卖出", "到了会自动卖出", "T+1", "T＋1",
+            "功能说明", "软件功能", "交易规则",
+        ]
+
     def _analyze_e13_context(self, text: str, summary_reason: str) -> Dict[str, Any]:
         text = text or ""
         summary_reason = summary_reason or ""
         summary_reason_norm = re.sub(r"[\s“”\"'‘’《》〈〉「」『』（）()\[\]【】,，。；;：:、】【]", "", summary_reason)
 
         service_intro_keywords = self._get_e13_service_intro_keywords()
+        trade_flow_exemption_keywords = self._get_e13_trade_flow_exemption_keywords()
         status_check_keywords = [
             "没买股票", "没买", "为什么没买", "怎么没买", "卖掉了吗", "是不是卖掉了",
             "是不是清了", "是不是清仓了", "你这个不是卖掉了吗", "今天是什么原因没买股票",
@@ -802,6 +801,9 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
             contains_service_intro = True
         if is_status_check or is_risk_reminder or is_education_talk:
             contains_service_intro = True
+        is_trade_flow_explanation = any(keyword in text for keyword in trade_flow_exemption_keywords)
+        if is_trade_flow_explanation:
+            contains_service_intro = True
         negative_summary_phrases_norm = [re.sub(r"[\s“”\"'‘’《》〈〉「」『』（）()\[\]【】,，。；;：:、】【]", "", phrase) for phrase in negative_summary_phrases]
         summary_negates_e13 = any(
             phrase in summary_reason or phrase_norm in summary_reason_norm
@@ -849,6 +851,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
             "loose_rule_supports_e13": loose_rule_supports_e13,
             "should_block_e13": should_block_e13,
             "contains_service_intro": contains_service_intro,
+            "is_trade_flow_explanation": is_trade_flow_explanation,
             "contains_product_name": contains_product_name,
             "is_status_check": is_status_check,
             "is_risk_reminder": is_risk_reminder,
@@ -1448,6 +1451,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
         # 加减分制阈值：≥30 违规，15~30 人工复核，<15 合规；可通过环境变量覆盖
         violation_threshold = _float_env("RISK_VIOLATION_THRESHOLD", 30.0)
         review_threshold = _float_env("RISK_REVIEW_THRESHOLD", 15.0)
+        zero_below_threshold = _float_env("RISK_ZERO_BELOW_THRESHOLD", review_threshold)
         good_case_override_threshold = _float_env("GOOD_CASE_OVERRIDE_THRESHOLD", 0.82)
         good_case_override_ratio = _float_env("GOOD_CASE_OVERRIDE_RATIO", 1.0)
         good_case_force_discount = _float_env("GOOD_CASE_FORCE_DISCOUNT", 20.0)
@@ -2019,9 +2023,10 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
                     and any(token in summary_reason for token in ["构成", "符合规则 13", "符合规则13", "高风险判定标准"])
                 )
                 late_contains_service_intro = bool(e13_ctx.get("contains_service_intro"))
+                late_trade_flow_explanation = bool(e13_ctx.get("is_trade_flow_explanation"))
                 late_service_phrase_hit = any(
                     keyword in text_norm for keyword in self._get_e13_service_intro_keywords()
-)
+                ) or any(keyword in text_norm for keyword in self._get_e13_trade_flow_exemption_keywords())
 
                 # Minimal E13 consistency correction:
                 # only when the LLM summary explicitly supports E13 and the structured E13 rule
@@ -2051,7 +2056,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
                 late_core_signal_support = sum([late_has_target, late_has_action, late_has_condition]) >= 2
                 if e13_name in event_scores and (
                     (
-                        (late_should_block_e13 or late_service_phrase_hit)
+                        (late_should_block_e13 or late_service_phrase_hit or late_trade_flow_explanation)
                         and not late_loose_rule_supports_e13
                         and not late_core_signal_support
                     )
@@ -2070,12 +2075,6 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
                     prefix = f"[该事件得分约 {event_scores[evt_name]:.1f}] "
                 formatted_event_reasons[evt_name] = f"{prefix}{evt_reason}"
 
-            final_decision = (
-                "violation"
-                if risk_score >= violation_threshold
-                else ("review" if risk_score >= review_threshold else "compliant")
-            )
-            violation = final_decision == "violation"
             override_reason_suffix = ""
             if good_case_overrides:
                 override_parts: List[str] = []
@@ -2129,6 +2128,26 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
                 calibration_reason_suffix = "；易错说明校准：" + "；".join(cal_parts)
             if not good_case_overrides:
                 override_reason_suffix = "；GOOD案例覆盖：无"
+
+            # 低分直接归零，避免 0~14 分的噪声影响最终展示和上报。
+            if 0.0 < risk_score < zero_below_threshold:
+                risk_score = 0.0
+                event_scores = {}
+                triggered_events = []
+                event_reasons = {}
+                formatted_event_reasons = {}
+                bad_case_hits = []
+                good_case_overrides = []
+                calibration_hits = []
+                triggered_event_str = "无"
+
+            final_decision = (
+                "violation"
+                if risk_score >= violation_threshold
+                else ("review" if risk_score >= review_threshold else "compliant")
+            )
+            violation = final_decision == "violation"
+
             if summary_reason:
                 reason_text = f"整体风险分 {risk_score:.1f}，决策 {final_decision}。{summary_reason}{bad_case_reason_suffix}{override_reason_suffix}{calibration_reason_suffix}"
             else:
