@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 import json
 import math
@@ -596,31 +596,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
         ]
         return any(re.search(p, text, re.IGNORECASE) for p in patterns)
 
-    def _has_assessment_steering(self, text: str) -> bool:
-        """Detect explicit steering/tampering in risk assessment context."""
-        if not text:
-            return False
-        if not self._is_risk_assessment_context(text):
-            return False
-
-        strong_patterns = [
-            r"我说几号你就选几号|按我说的填|照着我说的填|听我选",
-            r"选\s*[ABCD]\s*才(能)?过|别选(保守|低风险)|必须选\s*[ABCD]",
-            r"往高了填|改高一点|做高一点|填高一点",
-            r"这样才能过|保证通过|包过|一定通过",
-            r"身份证(随便填|乱填|填别人)|姓名(随便填|乱填|填别人)",
-        ]
-        if any(re.search(p, text, re.IGNORECASE) for p in strong_patterns):
-            return True
-
-        # Soft guidance alone is not considered interference.
-        soft_only_patterns = [
-            r"随便选一个|随便填|都可以|没有标准答案|只要不空着就行",
-        ]
-        if any(re.search(p, text, re.IGNORECASE) for p in soft_only_patterns):
-            return False
-
-        return False
+   
 
     def _get_e13_service_intro_keywords(self) -> List[str]:
         return [
@@ -1926,55 +1902,9 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
                     _remove_event(e01_name)
                     triggered_event_str = _join_triggered_events()
 
-            # 6.7 conflict resolution: in risk-assessment context, prefer E08 over E13
-            e08_name = self._get_rule_name_by_id(8)
-            e13_name = self._get_rule_name_by_id(13)
-            if (
-                self._is_risk_assessment_context(text_norm)
-                and self._has_assessment_steering(text_norm)
-                and e13_name in event_scores
-            ):
-                moved_score = float(event_scores.get(e13_name, 0.0) or 0.0)
-                event_scores.pop(e13_name, None)
-                triggered_events = [e for e in triggered_events if e != e13_name]
-                event_reasons.pop(e13_name, None)
-
-                if moved_score > 0:
-                    event_scores[e08_name] = event_scores.get(e08_name, 0.0) + moved_score
-                    if e08_name not in triggered_events:
-                        triggered_events.append(e08_name)
-                    if e08_name not in event_reasons:
-                        event_reasons[e08_name] = "在风险测评填写中存在替选答案/引导作答，干扰风险测评独立性。"
-
-                bad_case_hits = [h for h in bad_case_hits if str(h.get("rule_name", "")) != e13_name]
-                calibration_hits = [h for h in calibration_hits if str(h.get("rule_name", "")) != e13_name]
-                good_case_overrides = [h for h in good_case_overrides if str(h.get("rule_name", "")) != e13_name]
-                triggered_event_str = ", ".join(triggered_events) if triggered_events else "无"
-
-            # 6.75 conflict resolution: in risk-assessment context, E07 should not stand;
-            # if there is explicit steering, map to E08, otherwise clear E07.
             e07_name = self._get_rule_name_by_id(7)
-            if self._is_risk_assessment_context(text_norm) and e07_name in event_scores:
-                moved_score = float(event_scores.get(e07_name, 0.0) or 0.0)
-                event_scores.pop(e07_name, None)
-                triggered_events = [e for e in triggered_events if e != e07_name]
-                event_reasons.pop(e07_name, None)
 
-                if moved_score > 0 and self._has_assessment_steering(text_norm):
-                    event_scores[e08_name] = event_scores.get(e08_name, 0.0) + moved_score
-                    if e08_name not in triggered_events:
-                        triggered_events.append(e08_name)
-                    if e08_name not in event_reasons:
-                        event_reasons[e08_name] = "在风测场景中存在明确作答干预，按E08处理。"
-                else:
-                    risk_score = max(0.0, risk_score - moved_score)
-
-                bad_case_hits = [h for h in bad_case_hits if str(h.get("rule_name", "")) != e07_name]
-                calibration_hits = [h for h in calibration_hits if str(h.get("rule_name", "")) != e07_name]
-                good_case_overrides = [h for h in good_case_overrides if str(h.get("rule_name", "")) != e07_name]
-                triggered_event_str = ", ".join(triggered_events) if triggered_events else "无"
-
-            # 6.8 official addwx whitelist: do not treat official abctougu addwx links as E07 abnormal account opening
+            # 6.7 official addwx whitelist: do not treat official abctougu addwx links as E07 abnormal account opening
             if self._has_official_abctougu_addwx_link(text_norm) and e07_name in event_scores:
                 removed_score = float(event_scores.get(e07_name, 0.0) or 0.0)
                 event_scores.pop(e07_name, None)
