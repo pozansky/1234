@@ -58,6 +58,7 @@ class ComplianceRAGEngine:
         18: "夸大宣传策略重仓操作",
         19: "虚假宣传",
         20: "变相承诺收益",
+        21: "怂恿或知晓客户借贷投资",
     }
 
     def __init__(
@@ -152,6 +153,7 @@ class ComplianceRAGEngine:
 - 以短句为单位分析，严禁跨句组合解读；一个“保证”只对其所在短句负责；“保证”后接服务/价格/流程/一致性等非收益内容时，该句合规。
 - 诱导、暗示、营销话术（如“信我”“好吗？”“可以吗？”）不单独判违规；未出现“保证/一定/肯定”+具体金钱收益的死线结构时，不判违规。
 - 严格字面匹配：规则中写明的“绝对排除”“一律合规”情形必须执行；禁止联想、加戏、过度解读。
+- 对于“借贷投资”类规则，客户自述“借来的钱投资”“贷款炒股”“借钱准备投”“要利息”等，本身就是命中证据，不需要等待投顾后续明确怂恿或继续推进。
 
 【规则背景】以下为与待检测文本相关的候选规则（每条均为加减分制，分值以规则内为准）：
 
@@ -189,7 +191,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
 
 请依据【规则背景】与上述格式，只输出一个 JSON 对象。
 """
-        _event_whitelist = "\n".join(f"{i}. {self.RULE_NAMES[i]}、" for i in range(1, 21)).rstrip("、")
+        _event_whitelist = "\n".join(f"{i}. {self.RULE_NAMES[i]}、" for i in range(1, 22)).rstrip("、")
         prompt = ChatPromptTemplate.from_template(_prompt_raw.replace("__EVENT_WHITELIST__", _event_whitelist))
 
         # 5. 检索配置：按规则召回完整规则，不 rerank（参数已在 __init__ 开头从 kwargs/env 设置）
@@ -844,7 +846,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
         sentences = [s.strip() for s in re.split(r"[。！？!?；;\n|]", text) if s.strip()]
 
         promise_terms = ["保证", "一定", "肯定", "肯定要","绝对", "稳赚", "必赚", "包赚", "保本", "包赔", "可以", "能够", "能"]
-        result_terms = ["赚钱", "盈利", "收益", "获利", "回本", "不亏", "翻倍", "赚回来"]
+        result_terms = ["赚钱", "盈利", "收益", "获利", "回本", "翻倍", "赚回来"]
         result_patterns = [
             r"\d+\s*个点",
             r"\d+(?:\.\d+)?\s*%",
@@ -1369,7 +1371,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
         # 只保留以 "### 数字. 标题" 开头的规则块（排除文件开头的使用说明等）
         rule_blocks = [blk for blk in rule_blocks if blk.strip() and re.match(r"^###\s+\d+\.", blk.lstrip())]
 
-        if len(rule_blocks) != 20:
+        if len(rule_blocks) != 21:
             raise ValueError(
                 f"解析到的规则数量为 {len(rule_blocks)}，预期为 20，请检查 rules.md 中顶层标题是否为 '### 序号. 标题' 格式。"
             )
@@ -1439,6 +1441,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
 
         try:
             text = self._normalize_input_text(text)
+            has_huabei = "花呗" in text
             # 1. 调用 LLM 获取原始响应（预期为 JSON 字符串）
             raw_response = self.chain.invoke(text, config={"callbacks": []})
             if raw_response is None:
@@ -1930,6 +1933,15 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
                 good_case_overrides = [h for h in good_case_overrides if str(h.get("rule_name", "")) != e07_name]
                 triggered_event_str = ", ".join(triggered_events) if triggered_events else "无"
 
+            e21_name = self._get_rule_name_by_id(21)
+            if has_huabei and e21_name in event_scores:
+                # 花呗只作为支付/分期工具时，不应触发“借贷投资”事件。
+                _remove_event(e21_name)
+                bad_case_hits = [h for h in bad_case_hits if str(h.get("rule_name", "")) != e21_name]
+                calibration_hits = [h for h in calibration_hits if str(h.get("rule_name", "")) != e21_name]
+                good_case_overrides = [h for h in good_case_overrides if str(h.get("rule_name", "")) != e21_name]
+                triggered_event_str = _join_triggered_events()
+
             # 6.9 E13 final safety net:
             # if the LLM summary has already clearly concluded "违规指导",
             # restore only E13 itself unless the text is clearly a service/product introduction.
@@ -2165,5 +2177,7 @@ confidence：证据清晰 0.8~1.0，有模糊或保护较多 0.5~0.8，仅低风
             "final_count": len(full_rule_docs),
             "max_rules": self._max_rules,
         }
+
+
 
 
